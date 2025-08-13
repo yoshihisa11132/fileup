@@ -1,0 +1,4 @@
+AuthUserFile "/home/cf434222/cf434222.cloudfree.jp/htpasswd/fileup/admin/.htpasswd"
+AuthName "Member Site"
+AuthType BASIC
+require valid-user

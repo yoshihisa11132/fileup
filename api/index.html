@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>apiの使い方</title>
+</head>
+<body>
+<h1>apiの使い方</h1>
+<hr>
+<p>apiトークンは管理者にお問い合わせください</p>
+<br><h3>download.php</h3>
+<p>GETリクエストで動作します。</p>
+<h4>必要なヘッダー</h4>
+<p>User-Agent：基本何でも通ります</p>
+<p>X-API-Token：APIトークン入れてね</p>
+<p>X-Filename：ファイル名を入れてください。</p>
+<p>ちなみにヘッダーでやる場合は必要です、パラメーターでやる場合は省略可能(?file=ファイル名)</p>
+<br><h3>list.php</h3>
+<p>GETリクエストで動作します。</p>
+<h4>必要なヘッダー</h4>
+<p>User-Agent：基本何でも通ります</p>
+<p>X-API-Token：APIトークン入れてね</p>
+<br><h3>upload.php</h3>
+<p>POSTリクエストで動作します。</p>
+<h4>必要なヘッダー</h4>
+<p>User-Agent：基本何でも通ります</p>
+<p>X-API-Token：APIトークン入れてね</p>
+<p>Content-Type：MINEタイプ入れてね</p>
+<h4>必要なbody</h4>
+<p>ファイル、以上！</p>
+</body>
+</html>

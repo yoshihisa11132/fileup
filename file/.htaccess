@@ -1,0 +1,6 @@
+# uploadsディレクトリへの直接アクセスを禁止
+# PHPファイル（download.php）からのみアクセス可能
+
+# すべての直接アクセスを拒否
+Order Deny,Allow
+Deny from all
