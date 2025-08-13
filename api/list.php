@@ -1,5 +1,5 @@
 <?php
-// api/list.php - ファイル一覧取得API
+// api/list.php - ファイル一覧取得API（APIキー管理対応版）
 require_once '../config.php';
 
 header('Content-Type: application/json');
@@ -18,10 +18,16 @@ try {
         throw new Exception('User-Agentがないみたいですけど？');
     }
 
-    // トークンチェック
-    if ($token !== API_TOKEN) {
+    // APIキー検証
+    if (empty($token)) {
         http_response_code(401);
-        throw new Exception('トークンがないみたいです、管理者にお問い合わせの上ヘッダーのX-API-Tokenにトークンを指定してください。');
+        throw new Exception('APIキーがないみたいです、管理者にお問い合わせの上ヘッダーのX-API-Tokenにキーを指定してください。');
+    }
+
+    // APIキー検証（新システムのみ）
+    if (!ApiKeyManager::validateApiKey($token)) {
+        http_response_code(401);
+        throw new Exception('無効なAPIキーです。管理者に新しいAPIキーを発行してもらってください。');
     }
 
     $files = [];
@@ -45,8 +51,8 @@ try {
         return strtotime($b['modified']) - strtotime($a['modified']);
     });
 
-    // ログ記録
-    logActivity('API_LIST', count($files) . ' files', $userAgent, $clientIP);
+    // ログ記録（APIキー情報も含める）
+    logActivity('API_LIST', count($files) . ' files', $userAgent, $clientIP, $token);
 
     echo json_encode([
         'success' => true,
@@ -55,7 +61,7 @@ try {
     ]);
 
 } catch (Exception $e) {
-    logActivity('API_LIST_ERROR', '', $userAgent, $clientIP);
+    logActivity('API_LIST_ERROR', $e->getMessage(), $userAgent, $clientIP, $token);
     echo json_encode([
         'success' => false,
         'message' => $e->getMessage()

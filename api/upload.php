@@ -1,11 +1,11 @@
 <?php
-// api/upload.php - API用アップロードエンドポイント（デバッグ版）
+// api/upload.php - API用アップロードエンドポイント（改良版）
 require_once '../config.php';
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, User-Agent, Authorization, X-API-Token');
+header('Access-Control-Allow-Headers: Content-Type, User-Agent, Authorization, X-API-Token, X-Filename, X-Extension');
 
 // OPTIONSリクエスト（プリフライト）の処理
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -27,7 +27,11 @@ try {
             'files_received' => $_FILES,
             'post_received' => $_POST,
             'headers' => getallheaders(),
-            'php_input' => file_get_contents('php://input') ? 'present' : 'empty'
+            'php_input' => file_get_contents('php://input') ? 'present' : 'empty',
+            'custom_headers' => [
+                'X-Filename' => $_SERVER['HTTP_X_FILENAME'] ?? 'not set',
+                'X-Extension' => $_SERVER['HTTP_X_EXTENSION'] ?? 'not set'
+            ]
         ]);
         exit;
     }
@@ -35,7 +39,7 @@ try {
     // リクエストメソッドチェック
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
-        throw new Exception('post以外でどうしろと');
+        throw new Exception('POST以外でどうしろと');
     }
 
     // User-Agentチェック
@@ -44,14 +48,23 @@ try {
         throw new Exception('User-Agentがないみたいですけど？');
     }
 
-    // トークンチェック
-    if ($token !== API_TOKEN) {
+    // APIキー検証（新システムのみ）
+    if (empty($token)) {
         http_response_code(401);
-        throw new Exception('トークンがないみたいです、管理者にお問い合わせの上ヘッダーのX-API-Tokenにトークンを指定してください。現在のトークン: ' . $token);
+        throw new Exception('APIキーがないみたいです、管理者にお問い合わせの上ヘッダーのX-API-Tokenにキーを指定してください。');
     }
 
+    if (!ApiKeyManager::validateApiKey($token)) {
+        http_response_code(401);
+        throw new Exception('無効なAPIキーです。管理者に新しいAPIキーを発行してもらってください。');
+    }
+
+    // カスタムヘッダーから情報取得
+    $customFilename = $_SERVER['HTTP_X_FILENAME'] ?? '';
+    $customExtension = $_SERVER['HTTP_X_EXTENSION'] ?? '';
+
     // ファイル処理：multipart/form-data または直接バイナリデータ
-    $filename = '';
+    $originalFilename = '';
     $fileData = '';
     $fileSize = 0;
 
@@ -74,37 +87,84 @@ try {
             throw new Exception($errorMsg);
         }
 
-        $filename = $file['name'];
+        $originalFilename = $file['name'];
         $fileData = file_get_contents($file['tmp_name']);
         $fileSize = $file['size'];
         
     } else {
-        // 直接バイナリデータとして送信された場合（ARCの場合）
-        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+        // 直接バイナリデータとして送信された場合
         $fileData = file_get_contents('php://input');
         
         if (empty($fileData)) {
             http_response_code(400);
-            throw new Exception('ファイルデータがありません');
+            $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+            throw new Exception('$_FILESが空です。Content-Type: ' . $contentType);
         }
         
         $fileSize = strlen($fileData);
-        
-        // Content-Typeから拡張子を推測
+        $originalFilename = 'uploaded_file'; // デフォルトのファイル名
+    }
+
+    // ファイル名の決定（優先順位: X-Filename > multipart filename > デフォルト）
+    $baseFilename = 'uploaded_file';
+    if (!empty($customFilename)) {
+        // X-Filenameヘッダーが指定されている場合（最優先）
+        $baseFilename = $customFilename;
+    } elseif (!empty($originalFilename) && $originalFilename !== 'uploaded_file') {
+        // multipartで送信されたファイル名がある場合
+        $baseFilename = pathinfo($originalFilename, PATHINFO_FILENAME);
+    }
+
+    // 拡張子の決定（優先順位: X-Extension > 元ファイル拡張子 > Content-Type推測）
+    $extension = '';
+    if (!empty($customExtension)) {
+        // X-Extensionヘッダーが指定されている場合（最優先）
+        $extension = $customExtension;
+    } elseif (!empty($originalFilename)) {
+        // 元のファイル名から拡張子を取得
+        $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+    }
+    
+    // まだ拡張子が決まらない場合はContent-Typeから推測
+    if (empty($extension)) {
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
         $extensionMap = [
             'image/jpeg' => 'jpg',
             'image/jpg' => 'jpg',
             'image/png' => 'png',
             'image/gif' => 'gif',
             'image/webp' => 'webp',
+            'image/bmp' => 'bmp',
+            'image/svg+xml' => 'svg',
             'text/plain' => 'txt',
+            'text/html' => 'html',
+            'text/css' => 'css',
+            'text/javascript' => 'js',
             'application/pdf' => 'pdf',
             'application/zip' => 'zip',
-            'application/json' => 'json'
+            'application/x-rar-compressed' => 'rar',
+            'application/x-7z-compressed' => '7z',
+            'application/json' => 'json',
+            'application/xml' => 'xml',
+            'audio/mpeg' => 'mp3',
+            'audio/wav' => 'wav',
+            'audio/ogg' => 'ogg',
+            'audio/flac' => 'flac',
+            'video/mp4' => 'mp4',
+            'video/quicktime' => 'mov',
+            'video/x-msvideo' => 'avi',
+            'video/webm' => 'webm',
+            'application/octet-stream' => 'bin'
         ];
         
         $extension = $extensionMap[$contentType] ?? 'bin';
-        $filename = 'uploaded_file.' . $extension;
+    }
+
+    // 危険なファイル拡張子チェック
+    $lowerExtension = strtolower($extension);
+    if (in_array($lowerExtension, FORBIDDEN_EXTENSIONS)) {
+        http_response_code(400);
+        throw new Exception('注意読め (ファイル: ' . $baseFilename . '.' . $extension . ')');
     }
 
     // ファイルサイズチェック
@@ -114,23 +174,30 @@ try {
     }
 
     // 安全なファイル名生成
-    $safeFilename = date('Y-m-d_H-i-s_') . uniqid() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', $filename);
+    $safeBaseFilename = preg_replace('/[^a-zA-Z0-9._-]/', '', $baseFilename);
+    $safeExtension = preg_replace('/[^a-zA-Z0-9]/', '', $extension);
+    $safeFilename = date('Y-m-d_H-i-s_') . uniqid() . '_' . $safeBaseFilename . '.' . $safeExtension;
     $destination = UPLOAD_DIR . $safeFilename;
 
     // ファイルを保存
     if (file_put_contents($destination, $fileData) !== false) {
         // ログ記録
-        logActivity('API_UPLOAD', $safeFilename, $userAgent, $clientIP);
+        logActivity('API_UPLOAD', $safeFilename, $userAgent, $clientIP, $token);
         
         echo json_encode([
             'success' => true,
             'message' => 'File uploaded successfully',
             'data' => [
-                'original_filename' => $filename,
+                'original_filename' => $originalFilename,
+                'custom_filename' => $customFilename,
+                'custom_extension' => $customExtension,
                 'stored_filename' => $safeFilename,
+                'base_filename' => $baseFilename,
+                'extension' => $extension,
                 'file_size' => $fileSize,
                 'upload_time' => date('Y-m-d H:i:s'),
-                'upload_method' => !empty($_FILES['file']) ? 'multipart' : 'binary'
+                'upload_method' => !empty($_FILES['file']) ? 'multipart' : 'binary',
+                'content_type' => $_SERVER['CONTENT_TYPE'] ?? 'unknown'
             ]
         ]);
     } else {
@@ -139,7 +206,7 @@ try {
     }
 
 } catch (Exception $e) {
-    logActivity('API_UPLOAD_ERROR', $e->getMessage(), $userAgent, $clientIP);
+    logActivity('API_UPLOAD_ERROR', $e->getMessage(), $userAgent, $clientIP, $token);
     echo json_encode([
         'success' => false,
         'message' => $e->getMessage()

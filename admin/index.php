@@ -49,6 +49,22 @@ if (isset($_POST['delete_file'])) {
 
 $files = getFileList();
 $logs = getAccessLog();
+$apiKeys = ApiKeyManager::getAllApiKeys();
+
+// APIキー統計
+$activeApiKeys = 0;
+$expiredApiKeys = 0;
+$totalApiUsage = 0;
+foreach ($apiKeys as $key => $data) {
+    if ($data['active']) {
+        if ($data['expires_at'] && strtotime($data['expires_at']) < time()) {
+            $expiredApiKeys++;
+        } else {
+            $activeApiKeys++;
+        }
+    }
+    $totalApiUsage += $data['usage_count'];
+}
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -71,6 +87,23 @@ $logs = getAccessLog();
             color: #333;
             margin-bottom: 30px;
             text-align: center;
+        }
+        .nav {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .nav a {
+            color: #667eea;
+            text-decoration: none;
+            margin: 0 10px;
+            padding: 10px 20px;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .nav a:hover, .nav a.active {
+            background: #667eea;
+            color: white;
         }
         .stats {
             display: grid;
@@ -178,6 +211,11 @@ $logs = getAccessLog();
     <div class="container">
         <h1>🔧 ファイルサーバー管理画面</h1>
         
+        <div class="nav">
+            <a href="index.php" class="active">📊 ダッシュボード</a>
+            <a href="api_keys.php">🔑 APIキー管理</a>
+        </div>
+        
         <?php if (isset($message)): ?>
             <div class="message success"><?php echo htmlspecialchars($message); ?></div>
         <?php endif; ?>
@@ -199,6 +237,18 @@ $logs = getAccessLog();
                     ?>MB
                 </div>
                 <div class="stat-label">総容量</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number"><?php echo count($apiKeys); ?></div>
+                <div class="stat-label">APIキー総数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number"><?php echo $activeApiKeys; ?></div>
+                <div class="stat-label">有効APIキー</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number"><?php echo $totalApiUsage; ?></div>
+                <div class="stat-label">API使用回数</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number"><?php echo count($logs); ?></div>
