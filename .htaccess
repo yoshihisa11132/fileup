@@ -7,7 +7,7 @@
 </IfModule>
 
 # 危険ファイルへのアクセス禁止
-<FilesMatch "\.(php|phtml|php3|php4|php5|phps|pht|phar|exe|com|bat|cmd|scr|pif|vbs|vbe|js|jse|wsf|wsh|msc|jar|asp|aspx|jsp|py|pl|rb|cgi|sh|bash|ps1|psm1|htaccess|htpasswd|ini)$">
+<FilesMatch "\.(phtml|php3|php4|php5|phps|pht|phar|exe|com|bat|cmd|scr|pif|vbs|vbe|jse|wsf|wsh|msc|jar|asp|aspx|jsp|py|pl|rb|cgi|sh|bash|ps1|psm1|ini)$">
     Order Allow,Deny
     Deny from all
 </FilesMatch>
