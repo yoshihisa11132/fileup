@@ -35,6 +35,10 @@ try {
             $downloadLink = (isset($_SERVER['HTTPS']) ? 'https' : 'http') . 
                            '://' . $_SERVER['HTTP_HOST'] . 
                            dirname($_SERVER['PHP_SELF']) . 
+                           '/download.php?file=' . urlencode($safeFilename);
+            $dlLink = (isset($_SERVER['HTTPS']) ? 'https' : 'http') . 
+                           '://' . $_SERVER['HTTP_HOST'] . 
+                           dirname($_SERVER['PHP_SELF']) . 
                            '/redi.php?file=' . urlencode($safeFilename);
             $uploadedFiles[] = [
                 'original' => $filename,
