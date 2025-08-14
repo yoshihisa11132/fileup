@@ -1,71 +1,138 @@
 <?php
-// upload.php - Web UI用アップロードハンドラー
+// upload.php - Web UI用アップロードハンドラー（修正版）
 require_once 'config.php';
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
+setSecurityHeaders();
+
 $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
 $clientIP = getClientIP();
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         throw new Exception('POST method required');
     }
+
     if (empty($_FILES['files'])) {
         throw new Exception('ファイルが選択されていません');
     }
+
     $uploadedFiles = [];
     $files = $_FILES['files'];
+
+    // 単一ファイルと複数ファイルの両方に対応
+    if (!is_array($files['name'])) {
+        $files = [
+            'name' => [$files['name']],
+            'tmp_name' => [$files['tmp_name']],
+            'size' => [$files['size']],
+            'error' => [$files['error']],
+            'type' => [$files['type']]
+        ];
+    }
+
     // 複数ファイル対応
     for ($i = 0; $i < count($files['name']); $i++) {
         if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+            $errorMessage = getUploadErrorMessage($files['error'][$i]);
+            logActivity('WEB_UPLOAD_ERROR', $files['name'][$i], $userAgent, $clientIP, '', $errorMessage);
             continue;
         }
-        $filename = $files['name'][$i];
+
+        $originalFilename = $files['name'][$i];
         $tmpName = $files['tmp_name'][$i];
         $fileSize = $files['size'][$i];
+
         // ファイルサイズチェック
         if ($fileSize > MAX_FILE_SIZE) {
-            throw new Exception("ファイルサイズが大きすぎます: $filename");
+            throw new Exception("ファイルサイズが大きすぎます: $originalFilename (" . formatFileSize($fileSize) . " > " . formatFileSize(MAX_FILE_SIZE) . ")");
         }
-        // 拡張子チェックは廃止
-        
-        // 安全なファイル名生成
-        $safeFilename = date('Y-m-d_H-i-s_') . uniqid() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', $filename);
+
+        if ($fileSize == 0) {
+            throw new Exception("空のファイルはアップロードできません: $originalFilename");
+        }
+
+        // ファイル名の安全性チェック
+        if (empty($originalFilename) || strlen($originalFilename) > 255) {
+            throw new Exception("無効なファイル名です: $originalFilename");
+        }
+
+        // 安全なファイル名生成（修正版）
+        $safeFilename = generateSecureFilename($originalFilename);
         $destination = UPLOAD_DIR . $safeFilename;
+
+        // ファイルの移動
         if (move_uploaded_file($tmpName, $destination)) {
+            // ファイル検証
+            if (!validateUploadedFile($destination)) {
+                unlink($destination); // 無効なファイルは削除
+                throw new Exception("アップロードされたファイルが無効です: $originalFilename");
+            }
+
             // ダウンロードリンクを生成
-            $downloadLink = (isset($_SERVER['HTTPS']) ? 'https' : 'http') . 
-                           '://' . $_SERVER['HTTP_HOST'] . 
-                           dirname($_SERVER['PHP_SELF']) . 
-                           '/download.php?file=' . urlencode($safeFilename);
-            $dlLink = (isset($_SERVER['HTTPS']) ? 'https' : 'http') . 
-                           '://' . $_SERVER['HTTP_HOST'] . 
-                           dirname($_SERVER['PHP_SELF']) . 
-                           '/redi.php?file=' . urlencode($safeFilename);
+            $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'];
+            $path = dirname($_SERVER['PHP_SELF']);
+            
+            $downloadLink = $scheme . '://' . $host . $path . '/download.php?file=' . urlencode($safeFilename);
+            $dlLink = $scheme . '://' . $host . $path . '/redi.php?file=' . urlencode($safeFilename);
+
             $uploadedFiles[] = [
-                'original' => $filename,
+                'original' => $originalFilename,
                 'stored' => $safeFilename,
                 'size' => $fileSize,
                 'downloadLink' => $downloadLink,
+                'dlLink' => $dlLink, // 修正：プロパティ名を統一
                 'formattedSize' => formatFileSize($fileSize)
             ];
+
             // ログ記録
-            logActivity('WEB_UPLOAD', $safeFilename, $userAgent, $clientIP);
+            logActivity('WEB_UPLOAD', $safeFilename, $userAgent, $clientIP, '', "Original: $originalFilename, Size: " . formatFileSize($fileSize));
+        } else {
+            throw new Exception("ファイルの保存に失敗しました: $originalFilename");
         }
     }
+
     if (empty($uploadedFiles)) {
         throw new Exception('アップロードに失敗しました');
     }
+
     echo json_encode([
         'success' => true,
         'message' => count($uploadedFiles) . '個のファイルをアップロードしました',
         'files' => $uploadedFiles
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
+
 } catch (Exception $e) {
-    logActivity('WEB_UPLOAD_ERROR', '', $userAgent, $clientIP);
+    logActivity('WEB_UPLOAD_ERROR', '', $userAgent, $clientIP, '', $e->getMessage());
+    
+    http_response_code(400);
     echo json_encode([
         'success' => false,
         'message' => $e->getMessage()
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
 }
+
+// アップロードエラーメッセージを取得
+function getUploadErrorMessage($errorCode) {
+    switch ($errorCode) {
+        case UPLOAD_ERR_INI_SIZE:
+        case UPLOAD_ERR_FORM_SIZE:
+            return 'ファイルサイズが大きすぎます';
+        case UPLOAD_ERR_PARTIAL:
+            return 'ファイルのアップロードが中断されました';
+        case UPLOAD_ERR_NO_FILE:
+            return 'ファイルが選択されていません';
+        case UPLOAD_ERR_NO_TMP_DIR:
+            return 'サーバーの一時ディレクトリが見つかりません';
+        case UPLOAD_ERR_CANT_WRITE:
+            return 'ファイルの書き込みに失敗しました';
+        case UPLOAD_ERR_EXTENSION:
+            return '拡張機能によってアップロードがブロックされました';
+        default:
+            return '不明なエラー';
+    }
+}
+
 // ファイルサイズをフォーマットする関数
 function formatFileSize($bytes) {
     if ($bytes >= 1073741824) {

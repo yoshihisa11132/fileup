@@ -155,7 +155,7 @@
             cursor: pointer;
             font-size: 0.9rem;
             margin-left: 5px;
-            transition: transform 0.2s ease;
+            transition: all 0.2s ease;
         }
         .copy-btn:hover {
             transform: translateY(-1px);
@@ -271,7 +271,6 @@
         function uploadFiles(formData) {
             progressContainer.style.display = 'block';
             result.style.display = 'none';
-            // fileList.innerHTML = ''; // これをコメントアウトして既存のファイルリストを残す
 
             const xhr = new XMLHttpRequest();
 
@@ -342,14 +341,17 @@
                 const fileItem = document.createElement('div');
                 fileItem.className = 'file-item';
                 
+                // dlLinkプロパティを使用（修正）
+                const shareLink = file.dlLink || file.downloadLink;
+                
                 fileItem.innerHTML = `
                     <div class="file-info">
-                        <div class="file-name">📄 ${file.original}</div>
+                        <div class="file-name">📄 ${escapeHtml(file.original)}</div>
                         <div class="file-size">${file.formattedSize}</div>
                     </div>
                     <div class="button-group">
-                        <a href="${file.downloadLink}" class="download-btn" download onclick="event.stopPropagation()">📥 ダウンロード</a>
-                        <button type="button" class="copy-btn" onclick="copyLink('${file.dlLink}', this); event.stopPropagation()">🔗 リンクコピー</button>
+                        <a href="${escapeHtml(file.downloadLink)}" class="download-btn" download>📥 ダウンロード</a>
+                        <button type="button" class="copy-btn" onclick="copyToClipboard('${escapeHtml(shareLink)}', this)">🔗 リンクコピー</button>
                     </div>
                 `;
                 
@@ -369,38 +371,76 @@
             fileList.appendChild(resetBtn);
         }
 
-        function copyLink(link, button) {
-            // イベントの伝播を停止
-            event.stopPropagation();
+        // HTMLエスケープ関数を追加
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // クリップボードコピー関数を修正
+        function copyToClipboard(text, button) {
+            // Clipboard API を使用
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(function() {
+                    showCopySuccess(button);
+                }).catch(function(err) {
+                    console.error('Clipboard API failed:', err);
+                    fallbackCopyTextToClipboard(text, button);
+                });
+            } else {
+                // フォールバック
+                fallbackCopyTextToClipboard(text, button);
+            }
+        }
+
+        // フォールバックコピー関数
+        function fallbackCopyTextToClipboard(text, button) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            textArea.style.top = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showCopySuccess(button);
+                } else {
+                    console.error('Fallback copy failed');
+                    showCopyError(button);
+                }
+            } catch (err) {
+                console.error('Fallback copy error:', err);
+                showCopyError(button);
+            }
+
+            document.body.removeChild(textArea);
+        }
+
+        function showCopySuccess(button) {
+            const originalText = button.textContent;
+            button.textContent = '✅ コピー完了!';
+            button.classList.add('copied');
             
-            navigator.clipboard.writeText(link).then(function() {
-                const originalText = button.textContent;
-                button.textContent = '✅ コピー完了!';
-                button.classList.add('copied');
-                
-                setTimeout(function() {
-                    button.textContent = originalText;
-                    button.classList.remove('copied');
-                }, 2000);
-            }).catch(function(err) {
-                console.error('コピーに失敗しました:', err);
-                // フォールバック：テキストエリアを使ったコピー
-                const textArea = document.createElement('textarea');
-                textArea.value = link;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                
-                const originalText = button.textContent;
-                button.textContent = '✅ コピー完了!';
-                button.classList.add('copied');
-                
-                setTimeout(function() {
-                    button.textContent = originalText;
-                    button.classList.remove('copied');
-                }, 2000);
-            });
+            setTimeout(function() {
+                button.textContent = originalText;
+                button.classList.remove('copied');
+            }, 2000);
+        }
+
+        function showCopyError(button) {
+            const originalText = button.textContent;
+            button.textContent = '❌ コピー失敗';
+            button.style.backgroundColor = '#dc3545';
+            
+            setTimeout(function() {
+                button.textContent = originalText;
+                button.style.backgroundColor = '';
+            }, 2000);
         }
 
         function resetForm() {

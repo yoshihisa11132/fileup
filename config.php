@@ -1,8 +1,8 @@
 <?php
-// config.php - セキュリティ強化版設定ファイル
+// config.php - セキュリティ強化版設定ファイル（修正版）
 define('UPLOAD_DIR', __DIR__ . '/file/');
 define('MAX_FILE_SIZE', 100 * 1024 * 1024); // 100MB
-define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'txt', 'zip', 'rar', '7z', 'mp3', 'mp4', 'avi', 'mov', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']);
+define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'txt', 'zip', 'rar', '7z', 'mp3', 'mp4', 'avi', 'mov', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']);
 define('FORBIDDEN_EXTENSIONS', ['php', 'phtml', 'php3', 'php4', 'php5', 'phps', 'exe', 'sh', 'bat', 'cmd', 'com', 'pif', 'scr', 'vbs', 'js', 'jar', 'asp', 'aspx', 'jsp', 'py', 'pl', 'cgi', 'htaccess', 'htpasswd']);
 define('API_KEYS_FILE', __DIR__ . '/admin/api_keys.json');
 define('ADMIN_SESSION_TIMEOUT', 3600); // 1時間
@@ -184,7 +184,6 @@ class ApiKeyManager {
         return true;
     }
     
-    // 他のメソッドは既存のものを使用...
     public static function revokeApiKey($apiKey) {
         $keys = self::loadApiKeys();
         
@@ -213,18 +212,31 @@ class ApiKeyManager {
     }
 }
 
-// セキュアなファイル名生成
+// セキュアなファイル名生成（修正版）
 function generateSecureFilename($originalName) {
-    $extension = pathinfo($originalName, PATHINFO_EXTENSION);
-    $baseName = pathinfo($originalName, PATHINFO_FILENAME);
+    // 元のファイル名から情報を抽出
+    $pathInfo = pathinfo($originalName);
+    $extension = isset($pathInfo['extension']) ? strtolower($pathInfo['extension']) : '';
+    $baseName = isset($pathInfo['filename']) ? $pathInfo['filename'] : 'file';
+    
+    // 空のベース名の処理
+    if (empty(trim($baseName))) {
+        $baseName = 'file';
+    }
+    
+    // 拡張子が空の場合の処理
+    if (empty($extension)) {
+        // MIMEタイプから拡張子を推測（オプション）
+        $extension = 'bin'; // デフォルト
+    }
     
     // 危険な拡張子チェック
-    if (in_array(strtolower($extension), FORBIDDEN_EXTENSIONS)) {
+    if (in_array($extension, FORBIDDEN_EXTENSIONS)) {
         throw new Exception('この拡張子のファイルはアップロードできません: ' . $extension);
     }
     
-    // 許可された拡張子チェック
-    if (!empty(ALLOWED_EXTENSIONS) && !in_array(strtolower($extension), ALLOWED_EXTENSIONS)) {
+    // 許可された拡張子チェック（設定されている場合）
+    if (!empty(ALLOWED_EXTENSIONS) && !in_array($extension, ALLOWED_EXTENSIONS)) {
         throw new Exception('許可されていない拡張子です: ' . $extension);
     }
     
@@ -233,14 +245,25 @@ function generateSecureFilename($originalName) {
     $safeExtension = preg_replace('/[^a-zA-Z0-9]/', '', $extension);
     
     // ファイル名が空の場合のフォールバック
-    if (empty($safeBaseName)) {
-        $safeBaseName = 'file';
+    if (empty($safeBaseName) || $safeBaseName === '_') {
+        $safeBaseName = 'uploaded_file';
+    }
+    
+    // 長すぎるファイル名を短縮
+    if (strlen($safeBaseName) > 50) {
+        $safeBaseName = substr($safeBaseName, 0, 50);
     }
     
     $timestamp = date('Y-m-d_H-i-s');
     $uniqueId = bin2hex(random_bytes(8));
     
-    return $timestamp . '_' . $uniqueId . '_' . $safeBaseName . '.' . $safeExtension;
+    // 最終的なファイル名を生成（拡張子が空でない場合のみ追加）
+    $finalFilename = $timestamp . '_' . $uniqueId . '_' . $safeBaseName;
+    if (!empty($safeExtension)) {
+        $finalFilename .= '.' . $safeExtension;
+    }
+    
+    return $finalFilename;
 }
 
 // IPアドレス取得（より安全）
@@ -283,10 +306,16 @@ function logActivity($action, $filename = '', $userAgent = '', $ip = '', $apiKey
     file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
 }
 
-// ファイル検証
+// ファイル検証（改善版）
 function validateUploadedFile($filePath) {
     // ファイルが存在するかチェック
     if (!file_exists($filePath)) {
+        return false;
+    }
+    
+    // ファイルサイズチェック
+    $fileSize = filesize($filePath);
+    if ($fileSize === false || $fileSize > MAX_FILE_SIZE || $fileSize == 0) {
         return false;
     }
     
@@ -295,17 +324,30 @@ function validateUploadedFile($filePath) {
     $mimeType = finfo_file($finfo, $filePath);
     finfo_close($finfo);
     
+    if ($mimeType === false) {
+        return false;
+    }
+    
     $allowedMimeTypes = [
-        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp',
         'application/pdf', 'text/plain',
-        'application/zip', 'application/x-rar-compressed',
-        'audio/mpeg', 'video/mp4', 'video/quicktime',
+        'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
+        'audio/mpeg', 'audio/mp4', 'video/mp4', 'video/quicktime', 'video/x-msvideo',
         'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/octet-stream' // バイナリファイル用
     ];
     
     if (!in_array($mimeType, $allowedMimeTypes)) {
         error_log("Invalid MIME type: $mimeType for file: $filePath");
+        return false;
+    }
+    
+    // ファイル内容の簡易チェック（PHPタグの検出）
+    $fileContents = file_get_contents($filePath, false, null, 0, 1024); // 最初の1KBのみ
+    if ($fileContents !== false && (strpos($fileContents, '<?php') !== false || strpos($fileContents, '<?=') !== false)) {
+        error_log("PHP code detected in uploaded file: $filePath");
         return false;
     }
     
