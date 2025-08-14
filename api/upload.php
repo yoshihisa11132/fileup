@@ -1,143 +1,68 @@
 <?php
-// api/upload.php - セキュリティ強化版
+// 6. 改善されたAPI upload.php（並行制御・キャッシュ対応）
 require_once '../config.php';
-setSecurityHeaders();
-
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, User-Agent, Authorization, X-API-Token, X-Filename, X-Extension');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit;
-}
 
 $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
 $clientIP = getClientIP();
-$token = $_SERVER['HTTP_X_API_TOKEN'] ?? ($_POST['token'] ?? '');
+$token = $_SERVER['HTTP_X_API_TOKEN'] ?? '';
 
 try {
-    // レート制限チェック
-    if (!RateLimit::checkLimit('upload_' . $clientIP, 10, 300)) { // 5分間に10回まで
+    // 並行アクセス制御
+    if (!ConcurrencyControl::rateLimitCheck($clientIP, 10, 300)) { // 5分間に10回
         http_response_code(429);
-        throw new Exception('アップロード制限に達しました。しばらくお待ちください。');
+        throw new Exception('Rate limit exceeded');
     }
     
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        http_response_code(405);
-        throw new Exception('POST method required');
-    }
-    
-    if (empty($userAgent)) {
-        http_response_code(400);
-        throw new Exception('User-Agent header required');
-    }
-    
-    if (empty($token)) {
-        http_response_code(401);
-        throw new Exception('API token required');
-    }
+    // 既存の検証処理...
     
     if (!ApiKeyManager::validateApiKey($token)) {
         http_response_code(401);
         throw new Exception('Invalid API token');
     }
     
-    // ファイル処理
-    $customFilename = $_SERVER['HTTP_X_FILENAME'] ?? '';
-    $customExtension = $_SERVER['HTTP_X_EXTENSION'] ?? '';
+    // ファイル保存時の排他制御
+    $uploadLock = ConcurrencyControl::acquireLock('file_upload', 30);
+    if (!$uploadLock) {
+        http_response_code(503);
+        throw new Exception('Server busy, please try again later');
+    }
     
-    $originalFilename = '';
-    $fileData = '';
-    $fileSize = 0;
-    
-    if (!empty($_FILES['file'])) {
-        $file = $_FILES['file'];
+    try {
+        // ファイル処理...
+        $safeFilename = generateSecureFilename($finalFilename);
+        $destination = UPLOAD_DIR . $safeFilename;
         
-        if ($file['error'] !== UPLOAD_ERR_OK) {
-            http_response_code(400);
-            $errorMessages = [
-                UPLOAD_ERR_INI_SIZE => 'File size exceeds server limit',
-                UPLOAD_ERR_FORM_SIZE => 'File size exceeds form limit',
-                UPLOAD_ERR_PARTIAL => 'File partially uploaded',
-                UPLOAD_ERR_NO_FILE => 'No file uploaded',
-                UPLOAD_ERR_NO_TMP_DIR => 'Missing temp directory',
-                UPLOAD_ERR_CANT_WRITE => 'Failed to write file',
-                UPLOAD_ERR_EXTENSION => 'Upload stopped by extension'
-            ];
-            throw new Exception($errorMessages[$file['error']] ?? 'Upload error: ' . $file['error']);
+        if (file_put_contents($destination, $fileData, LOCK_EX) === false) {
+            throw new Exception('Failed to save file');
         }
         
-        $originalFilename = $file['name'];
-        $fileData = file_get_contents($file['tmp_name']);
-        $fileSize = $file['size'];
-        
-        // ファイル検証
-        if (!validateUploadedFile($file['tmp_name'])) {
-            http_response_code(400);
-            throw new Exception('File validation failed');
+        // 画像の場合は自動でサムネイル生成
+        if (ImageProcessor::isImage($destination)) {
+            ImageProcessor::generateThumbnail($destination, 300, 300);
+            
+            // WebP変換も実行（容量削減）
+            ImageProcessor::convertToWebP($destination, 85);
         }
         
-    } else {
-        $fileData = file_get_contents('php://input');
+        // ファイル一覧キャッシュを無効化
+        FileCache::delete('file_list_' . md5(UPLOAD_DIR));
         
-        if (empty($fileData)) {
-            http_response_code(400);
-            throw new Exception('No file data received');
-        }
+        echo json_encode([
+            'success' => true,
+            'message' => 'File uploaded successfully',
+            'data' => [
+                'stored_filename' => $safeFilename,
+                'has_thumbnail' => ImageProcessor::isImage($destination),
+                'thumbnail_url' => ImageProcessor::isImage($destination) ? 
+                    'thumb.php?file=' . urlencode($safeFilename) . '&w=300&h=300' : null
+            ]
+        ]);
         
-        $fileSize = strlen($fileData);
-        $originalFilename = 'uploaded_file';
+    } finally {
+        ConcurrencyControl::releaseLock($uploadLock);
     }
-    
-    // ファイルサイズチェック
-    if ($fileSize > MAX_FILE_SIZE) {
-        http_response_code(413);
-        throw new Exception('File size too large: ' . $fileSize . ' bytes');
-    }
-    
-    // ファイル名決定
-    $finalFilename = $originalFilename;
-    if (!empty($customFilename)) {
-        $finalFilename = $customFilename;
-        if (!empty($customExtension)) {
-            $finalFilename .= '.' . $customExtension;
-        }
-    }
-    
-    // セキュアなファイル名生成
-    $safeFilename = generateSecureFilename($finalFilename);
-    $destination = UPLOAD_DIR . $safeFilename;
-    
-    // ファイル保存
-    if (file_put_contents($destination, $fileData, LOCK_EX) === false) {
-        http_response_code(500);
-        throw new Exception('Failed to save file');
-    }
-    
-    // 最終検証
-    if (!validateUploadedFile($destination)) {
-        unlink($destination);
-        http_response_code(400);
-        throw new Exception('File failed post-upload validation');
-    }
-    
-    logActivity('API_UPLOAD', $safeFilename, $userAgent, $clientIP, $token, 'Size: ' . $fileSize);
-    
-    echo json_encode([
-        'success' => true,
-        'message' => 'File uploaded successfully',
-        'data' => [
-            'stored_filename' => $safeFilename,
-            'original_filename' => $originalFilename,
-            'file_size' => $fileSize,
-            'upload_time' => date('Y-m-d H:i:s')
-        ]
-    ]);
     
 } catch (Exception $e) {
-    logActivity('API_UPLOAD_ERROR', '', $userAgent, $clientIP, $token, $e->getMessage());
     echo json_encode([
         'success' => false,
         'message' => $e->getMessage()

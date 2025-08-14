@@ -4,3 +4,27 @@
 # すべての直接アクセスを拒否
 Order Deny,Allow
 Deny from all
+
+# 完全なPHP実行禁止
+Options -ExecCGI -Indexes
+AddHandler cgi-script .php .phtml .php3 .php4 .php5 .phps .pht .phar
+Order Deny,Allow
+Deny from all
+
+# 画像・安全ファイルのみアクセス許可  
+<FilesMatch "\.(jpg|jpeg|png|gif|webp|bmp|pdf|txt|zip|rar|7z|mp3|mp4|avi|mov|doc|docx|xls|xlsx|ppt|pptx)$">
+    Order Allow,Deny
+    Allow from all
+</FilesMatch>
+
+# すべてのPHPファイルを完全ブロック
+<FilesMatch "\.php">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# 隠しファイル・システムファイルのブロック
+<FilesMatch "^\.">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
