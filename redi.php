@@ -71,6 +71,9 @@ if ($isImage || $isAudio || $isVideo) {
             border-radius: 5px;
             margin-top: 20px;
             transition: background-color 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
         }
         
         .download-link:hover {
@@ -112,6 +115,13 @@ if ($isImage || $isAudio || $isVideo) {
             color: #666;
             margin-bottom: 10px;
         }
+        
+        .status-message {
+            font-size: 16px;
+            color: #28a745;
+            margin: 10px 0;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -150,28 +160,61 @@ if ($isImage || $isAudio || $isVideo) {
         <?php endif; ?>
         
         <p>をダウンロードしますか？</p>
-        <p class="countdown">なお<span class="timer" id="countdown">10</span>秒後に自動的にジャンプします。</p>
+        <p class="countdown" id="countdown-message">なお<span class="timer" id="countdown">10</span>秒後に自動的にジャンプします。</p>
+        <p class="status-message" id="status-message">自動転送が停止されました。</p>
         
-        <a href="<?php echo htmlspecialchars($downloadUrl, ENT_QUOTES, 'UTF-8'); ?>" class="download-link">
+        <button onclick="downloadFile()" class="download-link">
             ダウンロードする
-        </a>
+        </button>
     </div>
 
     <script>
         // カウントダウンと自動リダイレクト
         let countdown = 10;
+        let timer = null;
+        let isCountdownStopped = false;
+        
         const countdownElement = document.getElementById('countdown');
+        const countdownMessageElement = document.getElementById('countdown-message');
+        const statusMessageElement = document.getElementById('status-message');
         const downloadUrl = '<?php echo addslashes($downloadUrl); ?>';
         
-        const timer = setInterval(function() {
-            countdown--;
-            countdownElement.textContent = countdown;
-            
-            if (countdown <= 0) {
+        // カウントダウンを開始
+        function startCountdown() {
+            timer = setInterval(function() {
+                if (isCountdownStopped) {
+                    clearInterval(timer);
+                    return;
+                }
+                
+                countdown--;
+                countdownElement.textContent = countdown;
+                
+                if (countdown <= 0) {
+                    clearInterval(timer);
+                    window.location.href = downloadUrl;
+                }
+            }, 1000);
+        }
+        
+        // ダウンロードボタンが押された時の処理
+        function downloadFile() {
+            // カウントダウンを停止
+            isCountdownStopped = true;
+            if (timer) {
                 clearInterval(timer);
-                window.location.href = downloadUrl;
             }
-        }, 1000);
+            
+            // UIを更新
+            countdownMessageElement.style.display = 'none';
+            statusMessageElement.style.display = 'block';
+            
+            // ダウンロードページに移動
+            window.location.href = downloadUrl;
+        }
+        
+        // ページ読み込み時にカウントダウン開始
+        startCountdown();
     </script>
 </body>
 </html>
