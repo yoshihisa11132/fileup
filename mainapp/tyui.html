@@ -14,6 +14,29 @@
         <meta name="twitter:card" content="summary_large_image">
         <meta name="twitter:title" content="無料、会員登録不要で使えるファイル共有サイト　fileup">
         <meta name="twitter:description" content="AGPLのOSSだよ！どうもtwitter！">
+<style>
+        .fixed-button {
+            /* 画面の右下隅に固定 */
+            position: fixed;
+            bottom: 20px;  /* 下から20px */
+            right: 20px;   /* 右から20px */
+
+            /* ボタンのスタイル設定 */
+            display: inline-block;
+            padding: 15px 30px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none; /* リンクの下線を消す */
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 影を追加 */
+            font-weight: bold;
+            z-index: 1000; /* 他の要素より手前に表示 */
+        }
+
+        .fixed-button:hover {
+            background-color: #0056b3;
+        }
+</style>
 </head>
 <body>
 <h1>注意点</h1>
@@ -33,5 +56,6 @@
 <a target="_blank" href="./legal.html">
   利用規約やプライバシーポリシー (新しいウィンドウで開きます)
 </a>
+<a href="https://github.com/yoshihisa11132/fileup/tree/main" class="fixed-button"><img src="https://img.shields.io/badge/Source%20code%20in-Github-white?style=flat&logo=github"></a>
 </body>
 </html>

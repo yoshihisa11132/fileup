@@ -193,6 +193,27 @@ if (!empty($filename) && !empty($deleteKey) && $confirm === '1') {
             font-family: monospace;
             word-break: break-all;
         }
+        .fixed-button {
+            /* 画面の右下隅に固定 */
+            position: fixed;
+            bottom: 20px;  /* 下から20px */
+            right: 20px;   /* 右から20px */
+
+            /* ボタンのスタイル設定 */
+            display: inline-block;
+            padding: 15px 30px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none; /* リンクの下線を消す */
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* 影を追加 */
+            font-weight: bold;
+            z-index: 1000; /* 他の要素より手前に表示 */
+        }
+
+        .fixed-button:hover {
+            background-color: #0056b3;
+        }
     </style>
 </head>
 <body>
@@ -270,7 +291,7 @@ if (!empty($filename) && !empty($deleteKey) && $confirm === '1') {
             <a href="index.html" class="btn btn-home">🏠 ホームに戻る</a>
         <?php endif; ?>
     </div>
-
+<a href="https://github.com/yoshihisa11132/fileup/tree/main" class="fixed-button"><img src="https://img.shields.io/badge/Source%20code%20in-Github-white?style=flat&logo=github"></a>
     <script>
         // 削除キーの入力制限（数字のみ）
         const keyInput = document.getElementById('key');

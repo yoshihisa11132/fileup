@@ -2,7 +2,6 @@
 // config.php - セキュリティ強化版設定ファイル（修正版）
 define('UPLOAD_DIR', __DIR__ . '/file/');
 define('MAX_FILE_SIZE', 100 * 1024 * 1024); // 100MB
-define('ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'txt', 'zip', 'rar', '7z', 'mp3', 'mp4', 'avi', 'mov', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx']);
 define('FORBIDDEN_EXTENSIONS', ['php', 'phtml', 'php3', 'php4', 'php5', 'phps', 'exe', 'sh', 'bat', 'cmd', 'com', 'pif', 'scr', 'vbs', 'js', 'jar', 'asp', 'aspx', 'jsp', 'py', 'pl', 'cgi', 'htaccess', 'htpasswd']);
 define('API_KEYS_FILE', __DIR__ . '/admin/api_keys.json');
 define('ADMIN_SESSION_TIMEOUT', 3600); // 1時間
