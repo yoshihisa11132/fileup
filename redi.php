@@ -32,6 +32,16 @@ if ($isImage || $isAudio || $isVideo) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ファイルダウンロード</title>
+    <!-- OGPタグ（Discord、Twitter等で表示される） -->
+        <meta property="og:title" content="fileup">
+        <meta property="og:description" content="ファイルの受取リンクだよ！">
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="無料、会員登録不要で使えるファイル共有サイト">
+    
+        <!-- Twitter Card（Twitter専用） -->
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:title" content="無料、会員登録不要で使えるファイル共有サイト　fileup">
+        <meta name="twitter:description" content="ファイルの受取リンクだよ！">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -71,9 +81,6 @@ if ($isImage || $isAudio || $isVideo) {
             border-radius: 5px;
             margin-top: 20px;
             transition: background-color 0.3s;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
         }
         
         .download-link:hover {
@@ -115,13 +122,6 @@ if ($isImage || $isAudio || $isVideo) {
             color: #666;
             margin-bottom: 10px;
         }
-        
-        .status-message {
-            font-size: 16px;
-            color: #28a745;
-            margin: 10px 0;
-            display: none;
-        }
     </style>
 </head>
 <body>
@@ -160,61 +160,28 @@ if ($isImage || $isAudio || $isVideo) {
         <?php endif; ?>
         
         <p>をダウンロードしますか？</p>
-        <p class="countdown" id="countdown-message">なお<span class="timer" id="countdown">10</span>秒後に自動的にジャンプします。</p>
-        <p class="status-message" id="status-message">自動転送が停止されました。</p>
+        <p class="countdown">なお<span class="timer" id="countdown">10</span>秒後に自動的にジャンプします。</p>
         
-        <button onclick="downloadFile()" class="download-link">
+        <a href="<?php echo htmlspecialchars($downloadUrl, ENT_QUOTES, 'UTF-8'); ?>" class="download-link">
             ダウンロードする
-        </button>
+        </a>
     </div>
 
     <script>
         // カウントダウンと自動リダイレクト
         let countdown = 10;
-        let timer = null;
-        let isCountdownStopped = false;
-        
         const countdownElement = document.getElementById('countdown');
-        const countdownMessageElement = document.getElementById('countdown-message');
-        const statusMessageElement = document.getElementById('status-message');
         const downloadUrl = '<?php echo addslashes($downloadUrl); ?>';
         
-        // カウントダウンを開始
-        function startCountdown() {
-            timer = setInterval(function() {
-                if (isCountdownStopped) {
-                    clearInterval(timer);
-                    return;
-                }
-                
-                countdown--;
-                countdownElement.textContent = countdown;
-                
-                if (countdown <= 0) {
-                    clearInterval(timer);
-                    window.location.href = downloadUrl;
-                }
-            }, 1000);
-        }
-        
-        // ダウンロードボタンが押された時の処理
-        function downloadFile() {
-            // カウントダウンを停止
-            isCountdownStopped = true;
-            if (timer) {
+        const timer = setInterval(function() {
+            countdown--;
+            countdownElement.textContent = countdown;
+            
+            if (countdown <= 0) {
                 clearInterval(timer);
+                window.location.href = downloadUrl;
             }
-            
-            // UIを更新
-            countdownMessageElement.style.display = 'none';
-            statusMessageElement.style.display = 'block';
-            
-            // ダウンロードページに移動
-            window.location.href = downloadUrl;
-        }
-        
-        // ページ読み込み時にカウントダウン開始
-        startCountdown();
+        }, 1000);
     </script>
 </body>
 </html>
