@@ -170,6 +170,11 @@
             font-size: 0.85rem;
             margin-top: 3px;
         }
+        .no-delete-info {
+            color: #6c757d;
+            font-size: 0.85rem;
+            margin-top: 3px;
+        }
         .download-btn {
             background: linear-gradient(45deg, #28a745, #20c997);
             color: white;
@@ -220,6 +225,15 @@
             transform: translateY(-1px);
             background: #c82333;
         }
+        .delete-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .delete-btn:disabled:hover {
+            transform: none;
+            background: #6c757d;
+        }
         .reset-btn {
             background: #6c757d;
             color: white;
@@ -249,9 +263,9 @@
         <p>注意点は<a href="./tyui.html" target="_blank">こちら</a></p>
         <form id="uploadForm" enctype="multipart/form-data">
             <div class="delete-key-section">
-                <label class="delete-key-label" for="deleteKey">🔑 削除キー (数字のみ)</label>
-                <input type="text" id="deleteKey" class="delete-key-input" pattern="[0-9]*" maxlength="8" placeholder="削除キーを入力" title="数字のみ入力してください" required>
-                <div class="delete-key-note">後でファイルを削除する際に必要です（未入力の場合は削除不可）</div>
+                <label class="delete-key-label" for="deleteKey">🔑 削除キー (数字のみ、オプション)</label>
+                <input type="text" id="deleteKey" class="delete-key-input" pattern="[0-9]*" maxlength="8" placeholder="削除キーを入力">
+                <div class="delete-key-note">後でファイルを削除したい場合は必須です（未入力の場合は削除不可）</div>
             </div>
             <div class="upload-area" id="uploadArea">
                 <div class="upload-icon">📤</div>
@@ -328,20 +342,16 @@
         function handleFiles(files) {
             if (files.length === 0) return;
             
-            // 削除キーの検証
-            const deleteKey = deleteKeyInput.value.trim();
-            if (!deleteKey || !/^[0-9]+$/.test(deleteKey)) {
-                alert('削除キーは数字で入力してください。削除キーがないとファイルを削除できません。');
-                return;
-            }
-            
             const formData = new FormData();
             for (let i = 0; i < files.length; i++) {
                 formData.append('files[]', files[i]);
             }
             
-            // 削除キーを追加
-            formData.append('delete_key', deleteKey);
+            // 削除キーを追加（空でも可）
+            const deleteKey = deleteKeyInput.value.trim();
+            if (deleteKey) {
+                formData.append('delete_key', deleteKey);
+            }
 
             uploadFiles(formData);
         }
@@ -419,20 +429,31 @@
                 const fileItem = document.createElement('div');
                 fileItem.className = 'file-item';
                 
-                // dlLinkプロパティを使用（修正）
                 const shareLink = file.dlLink || file.downloadLink;
-                const deleteLink = `delete.php?file=${encodeURIComponent(file.stored)}&key=${deleteKey}`;
+                const deleteLink = `delete.php?file=${encodeURIComponent(file.stored)}&key=${deleteKey || ''}`;
+                
+                // 削除キー情報の表示
+                let deleteInfoHtml = '';
+                let deleteButtonHtml = '';
+                
+                if (file.deletable && deleteKey) {
+                    deleteInfoHtml = `<div class="delete-info">🔑 削除キー: ${deleteKey}</div>`;
+                    deleteButtonHtml = `<button type="button" class="delete-btn" onclick="openDeleteLink('${escapeHtml(deleteLink)}')">🗑️ 削除</button>`;
+                } else {
+                    deleteInfoHtml = '<div class="no-delete-info">🔒 削除不可（削除キーが設定されていません）</div>';
+                    deleteButtonHtml = '<button type="button" class="delete-btn" disabled title="削除キーが設定されていません">🗑️ 削除不可</button>';
+                }
                 
                 fileItem.innerHTML = `
                     <div class="file-info">
                         <div class="file-name">📄 ${escapeHtml(file.original)}</div>
                         <div class="file-size">${file.formattedSize}</div>
-                        <div class="delete-info">🔑 削除キー: ${deleteKey}</div>
+                        ${deleteInfoHtml}
                     </div>
                     <div class="button-group">
                         <a href="${escapeHtml(file.downloadLink)}" class="download-btn" download>📥 ダウンロード</a>
                         <button type="button" class="copy-btn" onclick="copyToClipboard('${escapeHtml(shareLink)}', this)">🔗 リンクコピー</button>
-                        <button type="button" class="delete-btn" onclick="openDeleteLink('${escapeHtml(deleteLink)}')">🗑️ 削除</button>
+                        ${deleteButtonHtml}
                     </div>
                 `;
                 
@@ -464,7 +485,7 @@
             window.open(deleteUrl, '_blank');
         }
 
-        // クリップボードコピー関数を修正
+        // クリップボードコピー関数
         function copyToClipboard(text, button) {
             // Clipboard API を使用
             if (navigator.clipboard) {

@@ -1,11 +1,12 @@
 <?php
-// upload.php - Web UI用アップロードハンドラー（削除キー機能付き）
+// upload.php - Web UI用アップロードハンドラー（削除キーオプション化版）
 require_once 'config.php';
 header('Content-Type: application/json; charset=utf-8');
 setSecurityHeaders();
 
 // 削除キー管理用のファイル
 define('DELETE_KEYS_FILE', __DIR__ . '/admin/delete_keys.json');
+define('DEFAULT_DELETE_KEY', '104710477014'); // デフォルト削除キー（削除不可）
 
 // 削除キー管理関数
 function loadDeleteKeys() {
@@ -51,14 +52,21 @@ try {
         throw new Exception('ファイルが選択されていません');
     }
 
-    // 削除キーの取得と検証
+    // 削除キーの取得（オプション）
     $deleteKey = $_POST['delete_key'] ?? '';
     $deleteKey = trim($deleteKey);
     
-    // 削除キーが数字のみかチェック
-    if (empty($deleteKey) || !preg_match('/^[0-9]+$/', $deleteKey)) {
-        http_response_code(400);
-        throw new Exception('削除キーは数字で入力してください。削除キーがないとファイルを削除できません。');
+    // 削除キーが空の場合はデフォルトキーを使用
+    if (empty($deleteKey)) {
+        $deleteKey = DEFAULT_DELETE_KEY;
+        $isDeletable = false;
+    } else {
+        // 削除キーが数字のみかチェック
+        if (!preg_match('/^[0-9]+$/', $deleteKey)) {
+            http_response_code(400);
+            throw new Exception('削除キーは数字で入力してください。');
+        }
+        $isDeletable = true;
     }
 
     $uploadedFiles = [];
@@ -101,7 +109,7 @@ try {
             throw new Exception("無効なファイル名です: $originalFilename");
         }
 
-        // 安全なファイル名生成（修正版）
+        // 安全なファイル名生成
         $safeFilename = generateSecureFilename($originalFilename);
         $destination = UPLOAD_DIR . $safeFilename;
 
@@ -124,17 +132,21 @@ try {
             $downloadLink = $scheme . '://' . $host . $path . '/download.php?file=' . urlencode($safeFilename);
             $dlLink = $scheme . '://' . $host . $path . '/redi.php?file=' . urlencode($safeFilename);
 
-            $uploadedFiles[] = [
+            $fileInfo = [
                 'original' => $originalFilename,
                 'stored' => $safeFilename,
                 'size' => $fileSize,
                 'downloadLink' => $downloadLink,
-                'dlLink' => $dlLink, // 修正：プロパティ名を統一
-                'formattedSize' => formatFileSize($fileSize)
+                'dlLink' => $dlLink,
+                'formattedSize' => formatFileSize($fileSize),
+                'deletable' => $isDeletable
             ];
+            
+            $uploadedFiles[] = $fileInfo;
 
             // ログ記録
-            logActivity('WEB_UPLOAD', $safeFilename, $userAgent, $clientIP, '', "Original: $originalFilename, Size: " . formatFileSize($fileSize) . ", DeleteKey: $deleteKey");
+            $deleteKeyLog = $isDeletable ? $deleteKey : 'DEFAULT(non-deletable)';
+            logActivity('WEB_UPLOAD', $safeFilename, $userAgent, $clientIP, '', "Original: $originalFilename, Size: " . formatFileSize($fileSize) . ", DeleteKey: $deleteKeyLog");
         } else {
             throw new Exception("ファイルの保存に失敗しました: $originalFilename");
         }
@@ -144,12 +156,18 @@ try {
         throw new Exception('アップロードに失敗しました');
     }
 
-    echo json_encode([
+    $responseData = [
         'success' => true,
         'message' => count($uploadedFiles) . '個のファイルをアップロードしました',
-        'files' => $uploadedFiles,
-        'delete_key' => $deleteKey
-    ], JSON_UNESCAPED_UNICODE);
+        'files' => $uploadedFiles
+    ];
+    
+    // 削除可能な場合のみ削除キーを返す
+    if ($isDeletable) {
+        $responseData['delete_key'] = $deleteKey;
+    }
+
+    echo json_encode($responseData, JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     logActivity('WEB_UPLOAD_ERROR', '', $userAgent, $clientIP, '', $e->getMessage());
@@ -194,3 +212,4 @@ function formatFileSize($bytes) {
         return $bytes . ' bytes';
     }
 }
+?>

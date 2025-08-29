@@ -1,11 +1,12 @@
 <?php
-// delete.php - ファイル削除機能
+// delete.php - ファイル削除機能（デフォルトキー削除防止版）
 require_once 'config.php';
 
 setSecurityHeaders();
 
 // 削除キー管理用のファイル
 define('DELETE_KEYS_FILE', __DIR__ . '/admin/delete_keys.json');
+define('DEFAULT_DELETE_KEY', '104710477014'); // 削除不可キー
 
 function loadDeleteKeys() {
     if (!file_exists(DELETE_KEYS_FILE)) {
@@ -24,7 +25,7 @@ function loadDeleteKeys() {
 }
 
 function saveDeleteKeys($keys) {
-    $content = json_encode($keys, JSON_PRETTY_print);
+    $content = json_encode($keys, JSON_PRETTY_PRINT);
     return file_put_contents(DELETE_KEYS_FILE, $content, LOCK_EX) !== false;
 }
 
@@ -44,37 +45,43 @@ if (!empty($filename) && !empty($deleteKey) && $confirm === '1') {
     if (!RateLimit::checkLimit($clientIP . '_delete', 5, 60)) {
         $error = '削除の頻度が高すぎます。しばらく待ってからお試しください。';
     } else {
-        // 削除キーが数字のみかチェック
-        if (!preg_match('/^[0-9]+$/', $deleteKey)) {
-            $error = '無効な削除キーです。';
+        // デフォルトキーでの削除をチェック（最優先）
+        if ($deleteKey === DEFAULT_DELETE_KEY) {
+            $error = 'このファイルは削除キーが指定されていません。削除することはできません。';
+            logActivity('USER_DELETE_DENIED', $filename, $userAgent, $clientIP, '', 'Default key deletion attempt');
         } else {
-            $filePath = UPLOAD_DIR . $filename;
-            
-            if (!file_exists($filePath)) {
-                $error = 'ファイルが見つかりません。';
+            // 削除キーが数字のみかチェック
+            if (!preg_match('/^[0-9]+$/', $deleteKey)) {
+                $error = '無効な削除キーです。';
             } else {
-                // 削除キーの検証
-                $deleteKeys = loadDeleteKeys();
+                $filePath = UPLOAD_DIR . $filename;
                 
-                if (!isset($deleteKeys[$filename])) {
-                    $error = 'このファイルの削除キー情報が見つかりません。';
-                } elseif ($deleteKeys[$filename]['delete_key'] !== $deleteKey) {
-                    $error = '削除キーが正しくありません。';
+                if (!file_exists($filePath)) {
+                    $error = 'ファイルが見つかりません。';
                 } else {
-                    // ファイル削除実行
-                    if (unlink($filePath)) {
-                        // 削除キー情報も削除
-                        unset($deleteKeys[$filename]);
-                        saveDeleteKeys($deleteKeys);
-                        
-                        $message = "ファイル '{$filename}' を正常に削除しました。";
-                        $deleted = true;
-                        
-                        // ログ記録
-                        logActivity('USER_DELETE', $filename, $userAgent, $clientIP, '', "DeleteKey: $deleteKey");
+                    // 削除キーの検証
+                    $deleteKeys = loadDeleteKeys();
+                    
+                    if (!isset($deleteKeys[$filename])) {
+                        $error = 'このファイルの削除キー情報が見つかりません。';
+                    } elseif ($deleteKeys[$filename]['delete_key'] !== $deleteKey) {
+                        $error = '削除キーが正しくありません。';
                     } else {
-                        $error = 'ファイルの削除に失敗しました。';
-                        logActivity('USER_DELETE_ERROR', $filename, $userAgent, $clientIP, '', "DeleteKey: $deleteKey, Error: Failed to delete file");
+                        // ファイル削除実行
+                        if (unlink($filePath)) {
+                            // 削除キー情報も削除
+                            unset($deleteKeys[$filename]);
+                            saveDeleteKeys($deleteKeys);
+                            
+                            $message = "ファイル '{$filename}' を正常に削除しました。";
+                            $deleted = true;
+                            
+                            // ログ記録
+                            logActivity('USER_DELETE', $filename, $userAgent, $clientIP, '', "DeleteKey: $deleteKey");
+                        } else {
+                            $error = 'ファイルの削除に失敗しました。';
+                            logActivity('USER_DELETE_ERROR', $filename, $userAgent, $clientIP, '', "DeleteKey: $deleteKey, Error: Failed to delete file");
+                        }
                     }
                 }
             }
@@ -121,6 +128,7 @@ if (!empty($filename) && !empty($deleteKey) && $confirm === '1') {
         .success-icon { color: #28a745; }
         .error-icon { color: #dc3545; }
         .question-icon { color: #667eea; }
+        .warning-icon { color: #ffc107; }
         .message {
             font-size: 1.2rem;
             margin-bottom: 30px;
@@ -128,6 +136,7 @@ if (!empty($filename) && !empty($deleteKey) && $confirm === '1') {
         }
         .success-message { color: #155724; }
         .error-message { color: #721c24; }
+        .warning-message { color: #856404; }
         .form-section {
             background: #f8f9fa;
             padding: 20px;
@@ -198,28 +207,48 @@ if (!empty($filename) && !empty($deleteKey) && $confirm === '1') {
             <a href="index.html" class="btn btn-home">🏠 ホームに戻る</a>
             
         <?php elseif (!empty($error)): ?>
-            <div class="icon error-icon">❌</div>
-            <div class="message error-message">
-                <?php echo htmlspecialchars($error); ?>
-            </div>
+            <?php if (strpos($error, 'キーが指定されていません') !== false): ?>
+                <div class="icon warning-icon">⚠️</div>
+                <div class="message warning-message">
+                    <?php echo htmlspecialchars($error); ?>
+                </div>
+            <?php else: ?>
+                <div class="icon error-icon">❌</div>
+                <div class="message error-message">
+                    <?php echo htmlspecialchars($error); ?>
+                </div>
+            <?php endif; ?>
             <a href="index.html" class="btn btn-home">🏠 ホームに戻る</a>
             
         <?php elseif (!empty($filename) && !empty($deleteKey)): ?>
             <!-- 削除確認画面 -->
-            <div class="icon question-icon">❓</div>
-            <div class="message">
-                以下のファイルを削除しますか？
-            </div>
-            <div class="file-info">
-                📄 <?php echo htmlspecialchars($filename); ?>
-            </div>
-            <form method="get">
-                <input type="hidden" name="file" value="<?php echo htmlspecialchars($filename); ?>">
-                <input type="hidden" name="key" value="<?php echo htmlspecialchars($deleteKey); ?>">
-                <input type="hidden" name="confirm" value="1">
-                <button type="submit" class="btn btn-danger">🗑️ 削除を実行</button>
-                <a href="javascript:history.back()" class="btn">🔙 戻る</a>
-            </form>
+            <?php if ($deleteKey === DEFAULT_DELETE_KEY): ?>
+                <!-- デフォルトキーの場合は削除不可メッセージ -->
+                <div class="icon warning-icon">⚠️</div>
+                <div class="message warning-message">
+                    このファイルは削除キーが指定されていません。削除することはできません。
+                </div>
+                <div class="file-info">
+                    📄 <?php echo htmlspecialchars($filename); ?>
+                </div>
+                <a href="index.html" class="btn btn-home">🏠 ホームに戻る</a>
+            <?php else: ?>
+                <!-- 通常の削除確認 -->
+                <div class="icon question-icon">❓</div>
+                <div class="message">
+                    以下のファイルを削除しますか？
+                </div>
+                <div class="file-info">
+                    📄 <?php echo htmlspecialchars($filename); ?>
+                </div>
+                <form method="get">
+                    <input type="hidden" name="file" value="<?php echo htmlspecialchars($filename); ?>">
+                    <input type="hidden" name="key" value="<?php echo htmlspecialchars($deleteKey); ?>">
+                    <input type="hidden" name="confirm" value="1">
+                    <button type="submit" class="btn btn-danger">🗑️ 削除を実行</button>
+                    <a href="javascript:history.back()" class="btn">🔙 戻る</a>
+                </form>
+            <?php endif; ?>
             
         <?php else: ?>
             <!-- 削除フォーム -->
