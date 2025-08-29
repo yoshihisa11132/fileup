@@ -1,8 +1,43 @@
 <?php
-// upload.php - Web UI用アップロードハンドラー（修正版）
+// upload.php - Web UI用アップロードハンドラー（削除キー機能付き）
 require_once 'config.php';
 header('Content-Type: application/json; charset=utf-8');
 setSecurityHeaders();
+
+// 削除キー管理用のファイル
+define('DELETE_KEYS_FILE', __DIR__ . '/admin/delete_keys.json');
+
+// 削除キー管理関数
+function loadDeleteKeys() {
+    if (!file_exists(DELETE_KEYS_FILE)) {
+        return [];
+    }
+    
+    $content = file_get_contents(DELETE_KEYS_FILE);
+    $decoded = json_decode($content, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        error_log("Delete Keys JSON decode error: " . json_last_error_msg());
+        return [];
+    }
+    
+    return $decoded ?: [];
+}
+
+function saveDeleteKeys($keys) {
+    $content = json_encode($keys, JSON_PRETTY_PRINT);
+    return file_put_contents(DELETE_KEYS_FILE, $content, LOCK_EX) !== false;
+}
+
+function storeDeleteKey($filename, $deleteKey) {
+    $keys = loadDeleteKeys();
+    $keys[$filename] = [
+        'delete_key' => $deleteKey,
+        'created_at' => date('Y-m-d H:i:s'),
+        'ip' => getClientIP()
+    ];
+    saveDeleteKeys($keys);
+}
 
 $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
 $clientIP = getClientIP();
@@ -14,6 +49,16 @@ try {
 
     if (empty($_FILES['files'])) {
         throw new Exception('ファイルが選択されていません');
+    }
+
+    // 削除キーの取得と検証
+    $deleteKey = $_POST['delete_key'] ?? '';
+    $deleteKey = trim($deleteKey);
+    
+    // 削除キーが数字のみかチェック
+    if (empty($deleteKey) || !preg_match('/^[0-9]+$/', $deleteKey)) {
+        http_response_code(400);
+        throw new Exception('削除キーは数字で入力してください。削除キーがないとファイルを削除できません。');
     }
 
     $uploadedFiles = [];
@@ -68,6 +113,9 @@ try {
                 throw new Exception("アップロードされたファイルが無効です: $originalFilename");
             }
 
+            // 削除キーを保存
+            storeDeleteKey($safeFilename, $deleteKey);
+
             // ダウンロードリンクを生成
             $scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $host = $_SERVER['HTTP_HOST'];
@@ -86,7 +134,7 @@ try {
             ];
 
             // ログ記録
-            logActivity('WEB_UPLOAD', $safeFilename, $userAgent, $clientIP, '', "Original: $originalFilename, Size: " . formatFileSize($fileSize));
+            logActivity('WEB_UPLOAD', $safeFilename, $userAgent, $clientIP, '', "Original: $originalFilename, Size: " . formatFileSize($fileSize) . ", DeleteKey: $deleteKey");
         } else {
             throw new Exception("ファイルの保存に失敗しました: $originalFilename");
         }
@@ -99,7 +147,8 @@ try {
     echo json_encode([
         'success' => true,
         'message' => count($uploadedFiles) . '個のファイルをアップロードしました',
-        'files' => $uploadedFiles
+        'files' => $uploadedFiles,
+        'delete_key' => $deleteKey
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
@@ -145,4 +194,3 @@ function formatFileSize($bytes) {
         return $bytes . ' bytes';
     }
 }
-?>

@@ -1,6 +1,25 @@
 <?php
-// admin/index.php - 管理画面
+// admin/index.php - 管理画面（削除キー表示機能付き）
 require_once '../config.php';
+
+// 削除キー管理用のファイル
+define('DELETE_KEYS_FILE', __DIR__ . '/delete_keys.json');
+
+function loadDeleteKeys() {
+    if (!file_exists(DELETE_KEYS_FILE)) {
+        return [];
+    }
+    
+    $content = file_get_contents(DELETE_KEYS_FILE);
+    $decoded = json_decode($content, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        error_log("Delete Keys JSON decode error: " . json_last_error_msg());
+        return [];
+    }
+    
+    return $decoded ?: [];
+}
 
 // ファイル一覧取得
 function getFileList() {
@@ -41,6 +60,12 @@ if (isset($_POST['delete_file'])) {
     $filename = $_POST['delete_file'];
     $filePath = UPLOAD_DIR . $filename;
     if (file_exists($filePath) && unlink($filePath)) {
+        // 削除キー情報も削除
+        $deleteKeys = loadDeleteKeys();
+        if (isset($deleteKeys[$filename])) {
+            unset($deleteKeys[$filename]);
+            file_put_contents(DELETE_KEYS_FILE, json_encode($deleteKeys, JSON_PRETTY_PRINT), LOCK_EX);
+        }
         $message = "ファイル '{$filename}' を削除しました。";
     } else {
         $error = "ファイルの削除に失敗しました。";
@@ -50,6 +75,7 @@ if (isset($_POST['delete_file'])) {
 $files = getFileList();
 $logs = getAccessLog();
 $apiKeys = ApiKeyManager::getAllApiKeys();
+$deleteKeys = loadDeleteKeys();
 
 // APIキー統計
 $activeApiKeys = 0;
@@ -159,7 +185,8 @@ foreach ($apiKeys as $key => $data) {
         }
         .file-actions {
             display: flex;
-            gap: 10px;
+            gap: 5px;
+            flex-wrap: wrap;
         }
         .btn {
             padding: 5px 10px;
@@ -175,6 +202,10 @@ foreach ($apiKeys as $key => $data) {
         }
         .btn-delete {
             background: #dc3545;
+            color: white;
+        }
+        .btn-info {
+            background: #17a2b8;
             color: white;
         }
         .btn:hover {
@@ -268,6 +299,7 @@ foreach ($apiKeys as $key => $data) {
                                 <th>ファイル名</th>
                                 <th>サイズ</th>
                                 <th>更新日時</th>
+                                <th>削除キー</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -279,6 +311,16 @@ foreach ($apiKeys as $key => $data) {
                                     <?php echo number_format($file['size'] / 1024, 1); ?> KB
                                 </td>
                                 <td><?php echo date('Y-m-d H:i:s', $file['modified']); ?></td>
+                                <td>
+                                    <?php if (isset($deleteKeys[$file['name']])): ?>
+                                        <button type="button" class="btn btn-info" 
+                                                onclick="showDeleteKey('<?php echo htmlspecialchars($deleteKeys[$file['name']]['delete_key']); ?>')">
+                                            🔑 表示
+                                        </button>
+                                    <?php else: ?>
+                                        <span style="color: #999;">削除不可</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <div class="file-actions">
                                         <a href="../download.php?file=<?php echo urlencode($file['name']); ?>" 
@@ -316,6 +358,11 @@ foreach ($apiKeys as $key => $data) {
     </div>
 
     <script>
+        // 削除キー表示関数
+        function showDeleteKey(deleteKey) {
+            alert('削除キー: ' + deleteKey);
+        }
+        
         // 自動更新（30秒間隔）
         setTimeout(function() {
             location.reload();
